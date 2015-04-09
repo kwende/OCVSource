@@ -28,7 +28,7 @@ HRESULT OCVSource::CreateInstance(REFIID iid, void **ppSource)
 
     HRESULT hr = S_OK;
     OCVSource* pSource = new (std::nothrow) OCVSource();
-    pSource->m_pStream = NULL; 
+    pSource->m_pStream = NULL;
 
     hr = MFCreateEventQueue(&pSource->m_pEventQueue);
 
@@ -131,9 +131,9 @@ STDMETHODIMP OCVSource::GetEvent(DWORD dwFlags, IMFMediaEvent** ppEvent)
 
     hr = pQueue->GetEvent(dwFlags, ppEvent);
 
-    pQueue->Release(); 
+    pQueue->Release();
 
-    return hr; 
+    return hr;
 }
 
 STDMETHODIMP OCVSource::QueueEvent(MediaEventType met, REFGUID guidExtendedType, HRESULT hrStatus, const PROPVARIANT* pvValue)
@@ -153,7 +153,7 @@ STDMETHODIMP OCVSource::QueueEvent(MediaEventType met, REFGUID guidExtendedType,
 
     LeaveCriticalSection(&m_CriticalSection);
 
-    return hr; 
+    return hr;
 }
 
 
@@ -163,59 +163,48 @@ STDMETHODIMP OCVSource::CreatePresentationDescriptor(IMFPresentationDescriptor**
     ATLTRACE2("BENR: OCVSource::CreatePresentationDescriptor");
 
     IMFMediaType *pMediaType = NULL;
+    IMFStreamDescriptor* pStreamDescriptor = NULL;
 
     HRESULT hr = ::MFCreateMediaType(&pMediaType);
 
     if (SUCCEEDED(hr))
     {
-        VIDEOINFOHEADER videoHeader;
-        ::ZeroMemory(&videoHeader, sizeof(VIDEOINFOHEADER));
-        videoHeader.AvgTimePerFrame = 300000; // 30 ms = 30000000 nanoseconds / 100 = 300000
-        videoHeader.dwBitErrorRate = 512 * 424 * 2 * 30 * 8; // 512x424 * 2 bytes * 8 bits/byte * 30 per second
-        videoHeader.dwBitErrorRate = 0; // ?
-        videoHeader.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        videoHeader.bmiHeader.biWidth = 512;
-        videoHeader.bmiHeader.biHeight = 424;
-        videoHeader.bmiHeader.biPlanes = 1;
-        videoHeader.bmiHeader.biBitCount = 3 * 8; // 1 pixel = R+G+B = 8+8+8 ??
-        videoHeader.bmiHeader.biCompression = BI_RGB;
-        videoHeader.bmiHeader.biSizeImage = (videoHeader.bmiHeader.biBitCount / 8) *
-            videoHeader.bmiHeader.biWidth * videoHeader.bmiHeader.biHeight;
-
-        hr = ::MFInitMediaTypeFromVideoInfoHeader(pMediaType, &videoHeader, sizeof(VIDEOINFOHEADER), NULL);
+        hr = pMediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
         if (SUCCEEDED(hr))
         {
-            IMFStreamDescriptor *pStreamDescriptor = NULL;
-
-            hr = ::MFCreateStreamDescriptor(
-                0,
-                1,
-                &pMediaType,
-                &pStreamDescriptor);
-
+            hr = pMediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB24);
             if (SUCCEEDED(hr))
             {
-                IMFMediaTypeHandler *pHandler = NULL;
-                hr = pStreamDescriptor->GetMediaTypeHandler(&pHandler);
+                hr = pMediaType->SetUINT32(MF_MT_AVG_BITRATE, 800000);
+                MFSetAttributeSize(pMediaType, MF_MT_FRAME_SIZE, 512, 424);
+                MFSetAttributeRatio(pMediaType, MF_MT_FRAME_RATE, 30, 1);
+                MFSetAttributeRatio(pMediaType, MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
+
+                hr = MFCreateStreamDescriptor(0, 1, &pMediaType, &pStreamDescriptor);
+
+                IMFMediaTypeHandler* pMediaTypeHandler;
+                pStreamDescriptor->GetMediaTypeHandler(&pMediaTypeHandler);
+
+                hr = pMediaTypeHandler->SetCurrentMediaType(pMediaType);
+
+                IMFPresentationDescriptor* localDescriptor;
+                hr = MFCreatePresentationDescriptor(1, &pStreamDescriptor, &localDescriptor);
+
                 if (SUCCEEDED(hr))
                 {
-                    hr = pHandler->SetCurrentMediaType(pMediaType);
+                    hr = localDescriptor->SelectStream(0);
 
                     if (SUCCEEDED(hr))
                     {
-                        hr = MFCreatePresentationDescriptor(
-                            1,
-                            &pStreamDescriptor,
-                            ppPresentationDescriptor);
-                        if (SUCCEEDED(hr))
-                        {
-                            hr = (*ppPresentationDescriptor)->SelectStream(0);
-                        }
+                        hr = localDescriptor->Clone(ppPresentationDescriptor); 
                     }
                 }
             }
         }
     }
+
+    pMediaType->Release(); 
+    pStreamDescriptor->Release(); 
 
     return hr;
 }
@@ -253,9 +242,9 @@ STDMETHODIMP OCVSource::Start(
 {
     ATLTRACE2("BENR: OCVSource::Start");
 
-    IMFStreamDescriptor* pStreamDescriptor = NULL; 
-    BOOL selected; 
-    HRESULT hr = pPresentationDescriptor->GetStreamDescriptorByIndex(0, &selected, &pStreamDescriptor); 
+    IMFStreamDescriptor* pStreamDescriptor = NULL;
+    BOOL selected;
+    HRESULT hr = pPresentationDescriptor->GetStreamDescriptorByIndex(0, &selected, &pStreamDescriptor);
 
     PROPVARIANT var;
     PropVariantInit(&var);
@@ -268,7 +257,7 @@ STDMETHODIMP OCVSource::Start(
             // create stream. 
             m_pStream = new OCVStream(this, pStreamDescriptor);
 
-            QueueEventWithIUnknown(this, MENewStream, S_OK, (IMFMediaSource*)m_pStream); 
+            QueueEventWithIUnknown(this, MENewStream, S_OK, (IMFMediaSource*)m_pStream);
         }
         else
         {
@@ -276,9 +265,9 @@ STDMETHODIMP OCVSource::Start(
         }
 
         hr = MFCreateMediaEvent(MESourceStarted, GUID_NULL, hr, &var, &pEvent);
-        
 
-        hr = m_pEventQueue->QueueEvent(pEvent); 
+
+        hr = m_pEventQueue->QueueEvent(pEvent);
         hr = m_pStream->QueueEvent(MEStreamStarted, GUID_NULL, hr, &var);
     }
 

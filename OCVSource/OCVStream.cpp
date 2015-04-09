@@ -156,31 +156,42 @@ STDMETHODIMP OCVStream::RequestSample(IUnknown* pToken)
     IMFSample *pSample = NULL;
 
     IMFMediaBuffer* pBuffer; 
-    HRESULT hr = MFCreateMemoryBuffer(3 * 8 * 512 * 424, &pBuffer);
+    HRESULT hr = MFCreateMemoryBuffer(3 * 512 * 424, &pBuffer);
 
     if (SUCCEEDED(hr))
     {
         hr = MFCreateSample(&pSample);
+
+        BYTE* pBufferPtr = NULL; 
+        DWORD dwCurrentLength = 3 * 512 * 424; 
+        DWORD dwMaxLength = 3 * 512 * 424; 
+        pBuffer->Lock(&pBufferPtr, &dwMaxLength, &dwCurrentLength); 
+
+        for (int c = 0; c < 3 * 512 * 424; c++)
+        {
+            pBufferPtr[c] = (c + position/100000) % 255;
+        }
+
+        pBuffer->Unlock(); 
+
+        pBuffer->SetCurrentLength(3 * 512 * 424); 
 
         hr = pSample->AddBuffer(pBuffer);
         pSample->AddRef();
 
         pSample->SetSampleTime(position);
 
-        position += 10000000;
+        position += 30000000 / 100;
 
         if (pToken)
         {
             pSample->SetUnknown(MFSampleExtension_Token, pToken);
         }
 
-        pSample->SetSampleDuration(10000000);
+        pSample->SetSampleDuration(30000000/100);
 
-        hr = QueueEventWithIUnknown(this, MEMediaSample, hr, pSample);
-    }
-    else
-    {
-        cout << "Fart" << endl; 
+        //hr = QueueEventWithIUnknown(this, MEMediaSample, hr, pSample);
+        m_pEventQueue->QueueEventParamUnk(MEMediaSample, GUID_NULL, S_OK, pSample); 
     }
 
     LeaveCriticalSection(&m_CriticalSection); 
